@@ -96,7 +96,7 @@ func Calc(expression string) (float64, error) {
 				numbers[i] = numbers[i] * numbers[i+1]
 			} else {
 				if numbers[i+1] == 0 {
-					return 0, fmt.Errorf("error")
+					return 0, fmt.Errorf("division by zero")
 				}
 				numbers[i] = numbers[i] / numbers[i+1]
 			}
