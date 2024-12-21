@@ -1,17 +1,19 @@
 package calculation
 
 import (
-	"fmt"
 	"strconv"
 )
 
 func Calc(expression string) (float64, error) {
-	if len(expression) == 0 {
-		return 0, fmt.Errorf("error")
-	}
+	var numbers []float64
+	var operations []string
+	var currentNum string
+	var lastWasOp bool
 
 	for i := 0; i < len(expression); i++ {
-		if expression[i] == '(' {
+		char := expression[i]
+
+		if char == '(' {
 			brackets := 1
 			j := i + 1
 			for j < len(expression) && brackets > 0 {
@@ -24,7 +26,7 @@ func Calc(expression string) (float64, error) {
 				j++
 			}
 			if brackets > 0 {
-				return 0, fmt.Errorf("error")
+				return 0, ErrMismatchedBrackets
 			}
 			innerResult, err := Calc(expression[i+1 : j-1])
 			if err != nil {
@@ -32,25 +34,11 @@ func Calc(expression string) (float64, error) {
 			}
 			expression = expression[:i] + strconv.FormatFloat(innerResult, 'f', -1, 64) + expression[j:]
 			i--
-		}
-	}
-
-	numbers := make([]float64, 0)
-	operations := make([]string, 0)
-	currentNum := ""
-	lastWasOp := true
-
-	for i := 0; i < len(expression); i++ {
-		char := string(expression[i])
-
-		if expression[i] == ' ' {
 			continue
 		}
 
-		if (expression[i] >= '0' && expression[i] <= '9') || expression[i] == '.' ||
-			(expression[i] == '-' && lastWasOp && i+1 < len(expression) &&
-				(expression[i+1] >= '0' && expression[i+1] <= '9')) {
-			currentNum += char
+		if (char >= '0' && char <= '9') || char == '.' {
+			currentNum += string(char)
 			lastWasOp = false
 			continue
 		}
@@ -58,36 +46,36 @@ func Calc(expression string) (float64, error) {
 		if currentNum != "" {
 			num, err := strconv.ParseFloat(currentNum, 64)
 			if err != nil {
-				return 0, fmt.Errorf("error: %s", currentNum)
+				return 0, ErrInvalidNumber
 			}
 			numbers = append(numbers, num)
 			currentNum = ""
 		}
 
-		if char == "+" || char == "-" || char == "*" || char == "/" {
-			if lastWasOp && char != "-" {
-				return 0, fmt.Errorf("error")
+		if char == '+' || char == '-' || char == '*' || char == '/' {
+			if lastWasOp && char != '-' {
+				return 0, ErrConsecutiveOperators
 			}
-			operations = append(operations, char)
+			operations = append(operations, string(char))
 			lastWasOp = true
-		} else if char != " " && char != "(" && char != ")" {
-			return 0, fmt.Errorf("error: %s", char)
+		} else {
+			return 0, ErrInvalidCharacter
 		}
 	}
 
 	if currentNum != "" {
 		num, err := strconv.ParseFloat(currentNum, 64)
 		if err != nil {
-			return 0, fmt.Errorf("error: %s", currentNum)
+			return 0, ErrInvalidNumber
 		}
 		numbers = append(numbers, num)
 	}
 
 	if len(numbers) == 0 {
-		return 0, fmt.Errorf("error")
+		return 0, ErrInvalidExpression
 	}
 	if len(numbers) != len(operations)+1 {
-		return 0, fmt.Errorf("error")
+		return 0, ErrInvalidExpression
 	}
 
 	for i := 0; i < len(operations); i++ {
@@ -96,7 +84,7 @@ func Calc(expression string) (float64, error) {
 				numbers[i] = numbers[i] * numbers[i+1]
 			} else {
 				if numbers[i+1] == 0 {
-					return 0, fmt.Errorf("division by zero")
+					return 0, ErrDivisionByZero
 				}
 				numbers[i] = numbers[i] / numbers[i+1]
 			}
@@ -110,7 +98,7 @@ func Calc(expression string) (float64, error) {
 	for i := 0; i < len(operations); i++ {
 		if operations[i] == "+" {
 			result += numbers[i+1]
-		} else if operations[i] == "-" {
+		} else {
 			result -= numbers[i+1]
 		}
 	}
