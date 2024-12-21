@@ -37,7 +37,7 @@ func Calc(expression string) (float64, error) {
 			continue
 		}
 
-		if (char >= '0' && char <= '9') || char == '.' {
+		if (char >= '0' && char <= '9') || char == '.' || (char == '-' && (i == 0 || lastWasOp)) {
 			currentNum += string(char)
 			lastWasOp = false
 			continue
