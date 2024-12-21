@@ -18,11 +18,60 @@ func TestApplication(t *testing.T) {
 		wantError          bool
 	}{
 		{
-			name:               "negative",
-			expression:         "-5*(3-6)",
-			expectedResult:     15,
+			name:               "simple addition",
+			expression:         "2+2",
+			expectedResult:     4,
 			expectedStatusCode: 200,
 			wantError:          false,
+		},
+		{
+			name:               "complex expression",
+			expression:         "3+5*2-8/4",
+			expectedResult:     11,
+			expectedStatusCode: 200,
+			wantError:          false,
+		},
+		{
+			name:               "negative multiplication",
+			expression:         "-10*(-5+2)",
+			expectedResult:     30,
+			expectedStatusCode: 200,
+			wantError:          false,
+		},
+		{
+			name:               "invalid character",
+			expression:         "2+a",
+			expectedResult:     0,
+			expectedStatusCode: 422,
+			wantError:          true,
+		},
+		{
+			name:               "division by zero",
+			expression:         "10/0",
+			expectedResult:     0,
+			expectedStatusCode: 422,
+			wantError:          true,
+		},
+		{
+			name:               "consecutive operators",
+			expression:         "5++3",
+			expectedResult:     0,
+			expectedStatusCode: 422,
+			wantError:          true,
+		},
+		{
+			name:               "mismatched parentheses",
+			expression:         "2*(3+2",
+			expectedResult:     0,
+			expectedStatusCode: 422,
+			wantError:          true,
+		},
+		{
+			name:               "empty expression",
+			expression:         "",
+			expectedResult:     0,
+			expectedStatusCode: 400,
+			wantError:          true,
 		},
 	}
 	for _, testCase := range TestApplicationCases {
