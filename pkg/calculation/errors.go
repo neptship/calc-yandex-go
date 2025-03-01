@@ -9,4 +9,5 @@ var (
 	ErrConsecutiveOperators = errors.New("consecutive operators")
 	ErrMismatchedBrackets   = errors.New("mismatched parentheses")
 	ErrInvalidCharacter     = errors.New("invalid character")
+	ErrUnsupportedExpr      = errors.New("unsupported expression type")
 )
