@@ -105,7 +105,12 @@ export default function Calculator() {
       console.log("Данные ответа:", data);
       
       if (!res.ok || data.error) {
-        setResult("Ошибка: " + (data.error || "неизвестная ошибка"));
+        // Проверяем текст ошибки и подменяем английский вариант на русский
+        if (data.error === "Invalid expression" || data.error === "invalid expression") {
+          setResult("Недопустимое выражение");
+        } else {
+          setResult(data.error || "Неизвестная ошибка");
+        }
         setLoading(false);
         return;
       }
@@ -136,7 +141,10 @@ export default function Calculator() {
         />
         {result && (
           <div className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70">
-            = {result}
+            {result === "Недопустимое выражение" || result === "Неизвестная ошибка" || result === "Ошибка запроса" || result === "Ошибка вычисления" ? 
+              result : 
+              `= ${result}`
+            }
           </div>
         )}
       </div>
