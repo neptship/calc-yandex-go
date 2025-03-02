@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/neptship/calc-yandex-go/internal/config"
 	"github.com/neptship/calc-yandex-go/internal/orchestrator"
 )
@@ -18,6 +19,12 @@ func main() {
 	service := orchestrator.NewService(cfg)
 
 	app := fiber.New()
+
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "http://localhost:3000",
+		AllowHeaders: "Origin, Content-Type, Accept",
+		AllowMethods: "GET, POST, OPTIONS",
+	}))
 
 	api := app.Group("/api/v1")
 	api.Post("/calculate", orchestrator.CalculateHandler(service))
