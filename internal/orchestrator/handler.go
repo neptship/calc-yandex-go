@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"regexp"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -37,30 +38,42 @@ func CalculateHandler(service *Service) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		var req CalculateRequest
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
-				"error": "Invalid request body",
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid request format",
 			})
 		}
 
 		if req.Expression == "" {
-			return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
-				"error": "Expression is required",
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Expression cannot be empty",
+			})
+		}
+
+		if matched, _ := regexp.MatchString(`^-?\d+(\.\d+)?$`, req.Expression); matched {
+			id, err := service.AddExpression(req.Expression)
+			if err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+					"error": err.Error(),
+				})
+			}
+
+			return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+				"id":     id,
+				"status": "completed",
+				"result": req.Expression,
 			})
 		}
 
 		id, err := service.AddExpression(req.Expression)
 		if err != nil {
-			if err == ErrInvalidExpression {
-				return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
-					"error": "Invalid expression",
-				})
-			}
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "Internal server error",
+				"error": err.Error(),
 			})
 		}
 
-		return c.Status(fiber.StatusCreated).JSON(CalculateResponse{ID: id})
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"id": id,
+		})
 	}
 }
 

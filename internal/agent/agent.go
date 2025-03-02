@@ -135,7 +135,7 @@ func submitResult(client *fiber.Client, baseURL string, taskID int, result float
 	}
 
 	if isError {
-		data["isError"] = true // Добавляем флаг ошибки
+		data["isError"] = true
 	}
 
 	body, err := json.Marshal(data)
