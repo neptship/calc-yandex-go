@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -31,7 +32,10 @@ func runWorker(ctx context.Context, id int, cfg *config.Config) {
 	client := fiber.AcquireClient()
 	defer fiber.ReleaseClient(client)
 
-	baseURL := fmt.Sprintf("http://localhost:%d", cfg.Port)
+	orchestratorURL := os.Getenv("ORCHESTRATOR_URL")
+	if orchestratorURL == "" {
+		orchestratorURL = fmt.Sprintf("http://localhost:%d", cfg.Port)
+	}
 
 	for {
 		select {
@@ -39,7 +43,7 @@ func runWorker(ctx context.Context, id int, cfg *config.Config) {
 			log.Printf("Worker %d shutting down", id)
 			return
 		default:
-			task, err := fetchTask(client, baseURL)
+			task, err := fetchTask(client, orchestratorURL)
 			if err != nil {
 				time.Sleep(time.Duration(cfg.AgentPeriodicityMs) * time.Millisecond)
 				continue
@@ -52,7 +56,7 @@ func runWorker(ctx context.Context, id int, cfg *config.Config) {
 
 			result, isError := executeOperation(task)
 
-			err = submitResult(client, baseURL, task.ID, result, isError)
+			err = submitResult(client, orchestratorURL, task.ID, result, isError)
 			if err != nil {
 				log.Printf("Worker %d failed to submit result: %v", id, err)
 			}
