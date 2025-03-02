@@ -50,7 +50,7 @@ func CalculateHandler(service *Service) fiber.Handler {
 		}
 
 		if matched, _ := regexp.MatchString(`^-?\d+(\.\d+)?$`, req.Expression); matched {
-			id, err := service.AddExpression(req.Expression)
+			id, err := service.AddSimpleExpression(req.Expression)
 			if err != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 					"error": err.Error(),
@@ -58,9 +58,7 @@ func CalculateHandler(service *Service) fiber.Handler {
 			}
 
 			return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-				"id":     id,
-				"status": "completed",
-				"result": req.Expression,
+				"id": id,
 			})
 		}
 

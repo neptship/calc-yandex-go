@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 
 	"github.com/neptship/calc-yandex-go/internal/config"
@@ -170,6 +171,30 @@ func (s *Service) SetTaskResult(id int, result float64) error {
 	s.checkExpressionCompletion(task.ExpressionID)
 
 	return nil
+}
+
+func (s *Service) AddSimpleExpression(expressionStr string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	value, err := strconv.ParseFloat(expressionStr, 64)
+	if err != nil {
+		return 0, ErrInvalidExpression
+	}
+
+	expressionID := s.nextExpressionID
+	s.nextExpressionID++
+
+	expression := &models.Expression{
+		ID:         expressionID,
+		Expression: expressionStr,
+		Status:     models.StatusCompleted,
+		Result:     &value,
+	}
+	s.expressions[expressionID] = expression
+	log.Printf("Добавлено простое выражение ID=%d: %s, результат=%f", expressionID, expressionStr, value)
+
+	return expressionID, nil
 }
 
 func (s *Service) createTasksFromOperations(expressionID int, ops []calculation.Operation) {
