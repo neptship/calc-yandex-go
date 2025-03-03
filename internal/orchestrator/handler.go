@@ -21,7 +21,13 @@ type ExpressionsResponse struct {
 }
 
 type ExpressionResponse struct {
-	Expression *models.Expression `json:"expression"`
+	Expression *ExpressionWithoutDuplication `json:"expression"`
+}
+
+type ExpressionWithoutDuplication struct {
+	ID     int      `json:"id"`
+	Status string   `json:"status"`
+	Result *float64 `json:"result,omitempty"`
 }
 
 type TaskResponse struct {
@@ -77,9 +83,19 @@ func CalculateHandler(service *Service) fiber.Handler {
 
 func GetExpressionsHandler(service *Service) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		expressions := service.GetAllExpressions()
+		expressionsOriginal := service.GetAllExpressions()
+
+		cleanExpressions := make([]*ExpressionWithoutDuplication, len(expressionsOriginal))
+		for i, expr := range expressionsOriginal {
+			cleanExpressions[i] = &ExpressionWithoutDuplication{
+				ID:     expr.ID,
+				Status: string(expr.Status),
+				Result: expr.Result,
+			}
+		}
+
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
-			"expressions": expressions,
+			"expressions": cleanExpressions,
 		})
 	}
 }
@@ -106,8 +122,15 @@ func GetExpressionHandler(service *Service) fiber.Handler {
 			})
 		}
 
+		// Создаем новую структуру без дублирующегося поля expression
+		cleanExpression := &ExpressionWithoutDuplication{
+			ID:     expression.ID,
+			Status: string(expression.Status),
+			Result: expression.Result,
+		}
+
 		return c.Status(fiber.StatusOK).JSON(ExpressionResponse{
-			Expression: expression,
+			Expression: cleanExpression,
 		})
 	}
 }
