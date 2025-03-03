@@ -122,7 +122,6 @@ func GetExpressionHandler(service *Service) fiber.Handler {
 			})
 		}
 
-		// Создаем новую структуру без дублирующегося поля expression
 		cleanExpression := &ExpressionWithoutDuplication{
 			ID:     expression.ID,
 			Status: string(expression.Status),

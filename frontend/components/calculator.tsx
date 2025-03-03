@@ -61,7 +61,6 @@ export default function Calculator() {
               };
               
               saveToHistory({
-                // Используем строку из стейта, а не fetchedExpr.expression:
                 expression: expression,
                 result: fetchedExpr.result.toString(),
                 timestamp: new Date().toISOString(),
@@ -73,11 +72,15 @@ export default function Calculator() {
               const { expression: _, ...dataWithoutExpression } = data;
               
               saveToHistory({
-                // То же самое: используем состояние, а не объект:
                 expression: expression,
                 result: "Ошибка вычисления",
                 timestamp: new Date().toISOString(),
-                fullData: dataWithoutExpression
+                fullData: {
+                  expression: {
+                    id: fetchedExpr.id,
+                    status: fetchedExpr.status
+                  }
+                }
               });
             }
             
@@ -143,20 +146,21 @@ export default function Calculator() {
         let errorMsg = data.error;
         if (data.error === "Invalid expression" || data.error === "invalid expression") {
           errorMsg = "Недопустимое выражение";
+          setResult(errorMsg);
         } else if (!data.error) {
           errorMsg = "Неизвестная ошибка";
+          saveToHistory({
+            expression: expression,
+            result: errorMsg,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          saveToHistory({
+            expression: expression,
+            result: errorMsg,
+            timestamp: new Date().toISOString(),
+          });
         }
-        
-        setResult(errorMsg);
-        
-        const { expression: _, ...dataWithoutExpression } = data;
-        
-        saveToHistory({
-          expression: expression,
-          result: errorMsg,
-          timestamp: new Date().toISOString(),
-          fullData: dataWithoutExpression
-        });
         
         setLoading(false);
         return;
@@ -183,7 +187,6 @@ export default function Calculator() {
       const errorMsg = "Ошибка запроса";
       setResult(errorMsg);
       
-      // Сохраняем ошибку запроса в историю
       saveToHistory({
         expression: expression,
         result: errorMsg,

@@ -23,7 +23,6 @@ export default function HistoryPage() {
       if (savedHistory) {
         const parsedHistory = JSON.parse(savedHistory);
         
-        // Sanitize history items to ensure we have strings
         const cleanHistory = parsedHistory.map((item: any) => ({
           expression: typeof item.expression === 'string' ? item.expression : 
                      JSON.stringify(item.expression),
