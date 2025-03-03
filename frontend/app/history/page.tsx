@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, AlertCircle, Trash2 } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { tomorrow } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -18,9 +18,27 @@ export default function HistoryPage() {
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
 
   useEffect(() => {
-    const savedHistory = localStorage.getItem("calculationsHistory");
-    if (savedHistory) {
-      setHistory(JSON.parse(savedHistory));
+    try {
+      const savedHistory = localStorage.getItem("calculationsHistory");
+      if (savedHistory) {
+        const parsedHistory = JSON.parse(savedHistory);
+        
+        // Sanitize history items to ensure we have strings
+        const cleanHistory = parsedHistory.map((item: any) => ({
+          expression: typeof item.expression === 'string' ? item.expression : 
+                     JSON.stringify(item.expression),
+          result: typeof item.result === 'string' ? item.result : 
+                 String(item.result),
+          timestamp: item.timestamp || new Date().toISOString(),
+          fullData: item.fullData || {}
+        }));
+        
+        setHistory(cleanHistory);
+      }
+    } catch (error) {
+      console.error("Error loading history:", error);
+      localStorage.removeItem("calculationsHistory");
+      setHistory([]);
     }
   }, []);
 
@@ -29,9 +47,7 @@ export default function HistoryPage() {
   };
 
   const clearHistory = () => {
-    // Очистка localStorage
     localStorage.removeItem("calculationsHistory");
-    // Обновление состояния
     setHistory([]);
   };
 
@@ -64,10 +80,12 @@ export default function HistoryPage() {
           <div key={i} className="bg-white/10 p-3 rounded-md mb-2">
             <div className="flex justify-between items-center">
               <div className="text-sm">
-                <span>{item.expression}</span>
-                {item.result.startsWith("Ошибка") ? (
-                  <span className="ml-2 text-red-500 inline-flex items-center">
-                    <AlertCircle className="w-4 h-4 mr-1" />
+                {/* Safely render expression with proper type checking */}
+                <span className="text-white">
+                  {item.expression}
+                </span>
+                {typeof item.result === 'string' && item.result.startsWith("Ошибка") ? (
+                  <span className="ml-2 text-red-500">
                     {item.result}
                   </span>
                 ) : (

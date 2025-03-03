@@ -41,19 +41,18 @@ export default function Calculator() {
           }
           
           const data = await response.json();
-          const expression = data.expression;
+          const fetchedExpr = data.expression;
           
-          if (expression.status === "completed" || expression.status === "failed") {
+          if (fetchedExpr.status === "completed" || fetchedExpr.status === "failed") {
             if (pollInterval.current) {
               clearInterval(pollInterval.current);
               pollInterval.current = null;
             }
             
-            if (expression.status === "completed" && expression.result !== null) {
-              setResult(expression.result.toString());
+            if (fetchedExpr.status === "completed" && fetchedExpr.result !== null) {
+              setResult(fetchedExpr.result.toString());
               
-              // Удаляем expression из data перед сохранением в историю
-              const updatedExpression = { ...data.expression };
+              const updatedExpression = { ...fetchedExpr };
               delete updatedExpression.expression;
               
               const dataWithoutDuplication = {
@@ -62,19 +61,20 @@ export default function Calculator() {
               };
               
               saveToHistory({
-                expression: expression.expression,
-                result: expression.result.toString(),
+                // Используем строку из стейта, а не fetchedExpr.expression:
+                expression: expression,
+                result: fetchedExpr.result.toString(),
                 timestamp: new Date().toISOString(),
                 fullData: dataWithoutDuplication
               });
             } else {
               setResult("Ошибка вычисления");
               
-              // Удаляем expression из data перед сохранением в историю
               const { expression: _, ...dataWithoutExpression } = data;
               
               saveToHistory({
-                expression: expression.expression,
+                // То же самое: используем состояние, а не объект:
+                expression: expression,
                 result: "Ошибка вычисления",
                 timestamp: new Date().toISOString(),
                 fullData: dataWithoutExpression
