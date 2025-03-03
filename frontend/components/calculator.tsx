@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 export default function Calculator() {
   const searchParams = useSearchParams();
@@ -10,9 +11,14 @@ export default function Calculator() {
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expressionId, setExpressionId] = useState<number | null>(null);
+  const [history, setHistory] = useState<string[]>([])
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    const savedHistory = localStorage.getItem("calculatorHistory")
+    if (savedHistory) {
+      setHistory(JSON.parse(savedHistory))
+    }
     const expressionParam = searchParams.get("expression");
     const resultParam = searchParams.get("result");
 
@@ -45,8 +51,34 @@ export default function Calculator() {
             
             if (expression.status === "completed" && expression.result !== null) {
               setResult(expression.result.toString());
+              
+              // Удаляем expression из data перед сохранением в историю
+              const updatedExpression = { ...data.expression };
+              delete updatedExpression.expression;
+              
+              const dataWithoutDuplication = {
+                ...data,
+                expression: updatedExpression
+              };
+              
+              saveToHistory({
+                expression: expression.expression,
+                result: expression.result.toString(),
+                timestamp: new Date().toISOString(),
+                fullData: dataWithoutDuplication
+              });
             } else {
               setResult("Ошибка вычисления");
+              
+              // Удаляем expression из data перед сохранением в историю
+              const { expression: _, ...dataWithoutExpression } = data;
+              
+              saveToHistory({
+                expression: expression.expression,
+                result: "Ошибка вычисления",
+                timestamp: new Date().toISOString(),
+                fullData: dataWithoutExpression
+              });
             }
             
             setLoading(false);
@@ -84,6 +116,12 @@ export default function Calculator() {
     }
   };
 
+  const saveToHistory = (historyItem: any) => {
+    const savedHistory = JSON.parse(localStorage.getItem("calculationsHistory") || "[]");
+    const updatedHistory = [historyItem, ...savedHistory].slice(0, 50);
+    localStorage.setItem("calculationsHistory", JSON.stringify(updatedHistory));
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
@@ -99,18 +137,27 @@ export default function Calculator() {
         body: JSON.stringify({ expression }),
       });
       
-      console.log("Статус ответа:", res.status);
-      
       const data = await res.json();
-      console.log("Данные ответа:", data);
       
       if (!res.ok || data.error) {
-        // Проверяем текст ошибки и подменяем английский вариант на русский
+        let errorMsg = data.error;
         if (data.error === "Invalid expression" || data.error === "invalid expression") {
-          setResult("Недопустимое выражение");
-        } else {
-          setResult(data.error || "Неизвестная ошибка");
+          errorMsg = "Недопустимое выражение";
+        } else if (!data.error) {
+          errorMsg = "Неизвестная ошибка";
         }
+        
+        setResult(errorMsg);
+        
+        const { expression: _, ...dataWithoutExpression } = data;
+        
+        saveToHistory({
+          expression: expression,
+          result: errorMsg,
+          timestamp: new Date().toISOString(),
+          fullData: dataWithoutExpression
+        });
+        
         setLoading(false);
         return;
       }
@@ -118,19 +165,41 @@ export default function Calculator() {
       if (data.status === "completed" && data.result !== undefined) {
         setResult(data.result);
         setLoading(false);
+        
+        const { expression: _, ...dataWithoutExpression } = data;
+        
+        saveToHistory({
+          expression: expression,
+          result: data.result.toString(),
+          timestamp: new Date().toISOString(),
+          fullData: dataWithoutExpression
+        });
+        
         return;
       }
       
       setExpressionId(data.id);
     } catch (error) {
-      console.error("Ошибка запроса:", error);
-      setResult("Ошибка запроса");
+      const errorMsg = "Ошибка запроса";
+      setResult(errorMsg);
+      
+      // Сохраняем ошибку запроса в историю
+      saveToHistory({
+        expression: expression,
+        result: errorMsg,
+        timestamp: new Date().toISOString(),
+        fullData: { error }
+      });
+      
       setLoading(false);
     }
   };
 
   return (
-    <div className="w-full max-w-md space-y-4 animate-fade-in">
+    <div className="w-full max-w-md space-y-4 animate-fade-in relative">
+      <Link href="/history" className="absolute -top-12 right-0 text-white/70 hover:text-white transition-colors">
+        История
+      </Link>
       <div className="relative">
         <input
           type="text"
