@@ -30,20 +30,11 @@ Cервис на Go для вычисления арифметических в�
 git clone https://github.com/neptship/calc-yandex-go
 cd calc-yandex-go
 
+# Установка всех зависимостей (Go модулей и npm пакетов)
+make install
+
 # Запуск всех компонентов (оркестратор, агент, фронтенд)
 make run-all
-
-# Запуск только оркестратора
-make run-orchestrator
-
-# Запуск только агента
-make run-agent
-
-# Запуск только фронтенда
-make run-frontend
-
-# Запуск тестов
-make test
 ```
 
 ### Запуск через Docker
@@ -57,17 +48,26 @@ docker-compose up
 
 ### Ручной запуск
 
+**Клонирование репозитория и установка зависимостей**
+
+```bash
+# Установка Go модулей
+go mod tidy
+
+# Установка npm пакетов
+cd frontend
+npm install
+cd ..
+```
+
 **Запуск оркестратора**
 ```bash
-git clone https://github.com/neptship/calc-yandex-go
-cd calc-yandex-go
 go run cmd/orchestrator/main.go
 ```
 
 **Запуск агентов (В отдельном терминале)**
 
 ```bash
-cd calc-yandex-go
 go run cmd/agent/main.go
 ```
 
@@ -76,8 +76,7 @@ go run cmd/agent/main.go
 ### Запуск фронтенда
 
 ```bash
-cd calc-yandex-go/frontend
-npm install
+cd frontend
 npm run dev
 ```
 
