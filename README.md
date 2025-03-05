@@ -84,6 +84,13 @@ npm run dev
 
 ## API Спецификация
 
+```mermaid
+flowchart LR
+    A[Фронтенд Next.js] -->|Отправка выражения| B[Оркестратор Go]
+    B -->|Задачи с указанным временем| C[Агенты Go]
+    C -->|Результаты операций| B
+    B -->|Итоговый ответ| A
+```
 ### POST /api/v1/calculate
 
 Отправляет выражение на вычисление и возвращает идентификатор задачи.
@@ -173,9 +180,58 @@ npm run dev
 }
 ```
 
+### GET /internal/task
+Получает задачу для выполнения агентом.
+
+**Успешный ответ (200 OK):**
+```json
+{
+    "task": {
+        "id": 1,
+        "arg1": 2,
+        "arg2": 2,
+        "operation": "+",
+        "operation_time": 1000
+    }
+}
+```
+
+**Ответ, если нет доступных задач (404 Not Found):**
+```json
+{
+    "error": "No tasks available"
+}
+```
+
+### POST /internal/task
+Отправляет результат выполнения задачи.
+
+**Формат запроса:**
+```json
+{
+    "id": 1,
+    "result": 4
+}
+```
+**Успешный ответ (200 OK):**
+```json
+{
+    "success": true
+}
+```
+**Ответ, если задача не найдена (404 Not Found):**
+```json
+{
+    "error": "Task not found"
+}
+```
+
+
 ## Примеры использования
 
-### Отправка выражения на вычисление
+### Успешные сценарии
+
+**Отправка выражения на вычисление**
 ```bash
 curl --location 'http://localhost:8080/api/v1/calculate' \
 --header 'Content-Type: application/json' \
@@ -191,23 +247,23 @@ curl --location 'http://localhost:8080/api/v1/calculate' \
 }
 ```
 
-### Некорректное выражение
+**Отправка сложного выражения**
 ```bash
 curl --location 'http://localhost:8080/api/v1/calculate' \
 --header 'Content-Type: application/json' \
 --data '{
-    "expression": "2+2ё"
+    "expression": "(70/7) * 10 /((3+2) * (3+7)) - 2"
 }'
 ```
 
 Ответ:
 ```json
 {
-    "error": "invalid character"
+    "id": 2
 }
 ```
 
-### Получение результата вычисления
+**Получение результата вычисления**
 ```bash
 curl --location 'http://localhost:8080/api/v1/expressions/1'
 ```
@@ -223,10 +279,168 @@ curl --location 'http://localhost:8080/api/v1/expressions/1'
 }
 ```
 
-### Получение списка всех выражений
-
+**Получение списка всех выражений**
 ```bash
 curl --location 'http://localhost:8080/api/v1/expressions'
+```
+
+Ответ:
+```json
+{
+    "expressions": [
+        {
+            "id": 1,
+            "status": "completed",
+            "result": 6
+        },
+        {
+            "id": 2,
+            "status": "processing"
+        }
+    ]
+}
+```
+
+**Получение задачи агентом**
+```bash
+curl --location 'http://localhost:8080/internal/task'
+```
+
+Ответ:
+```json
+{
+    "task": {
+        "id": 3,
+        "arg1": 3,
+        "arg2": 5,
+        "operation": "+",
+        "operation_time": 1000
+    }
+}
+```
+
+**Отправка результата задачи**
+```bash
+curl --location 'http://localhost:8080/internal/task' \
+--header 'Content-Type: application/json' \
+--data '{
+    "id": 3,
+    "result": 8
+}'
+```
+
+Ответ:
+```json
+{
+    "success": true
+}
+```
+
+### Обработка ошибок
+
+**Невалидный JSON при отправке выражения**
+```bash
+curl --location 'http://localhost:8080/api/v1/calculate' \
+--header 'Content-Type: application/json' \
+--data 'not-valid-json'
+```
+
+Ответ:
+```json
+{
+    "error": "Invalid request format"
+}
+```
+
+### Некорректное выражение
+```bash
+curl --location 'http://localhost:8080/api/v1/calculate' \
+--header 'Content-Type: application/json' \
+--data '{
+    "expression": "2+*2"
+}'
+```
+
+Ответ:
+```json
+{
+    "error": "invalid expression"
+}
+```
+
+**Запрос несуществующего выражения**
+```bash
+curl --location 'http://localhost:8080/api/v1/expressions/999'
+```
+
+Ответ:
+```json
+{
+    "error": "Expression not found"
+}
+```
+
+**Деление на ноль**
+```bash
+curl --location 'http://localhost:8080/api/v1/calculate' \
+--header 'Content-Type: application/json' \
+--data '{
+    "expression": "5/0"
+}'
+```
+
+После проверки статуса выражения:
+```json
+{
+    "expression": {
+        "id": 3,
+        "status": "failed",
+        "result": null
+    }
+}
+```
+
+**Запрос задачи, когда нет доступных задач**
+```bash
+curl --location 'http://localhost:8080/internal/task'
+```
+
+Ответ:
+```json
+{
+    "error": "No tasks available"
+}
+```
+
+**Некорректный запрос при отправке результата задачи**
+```bash
+curl --location 'http://localhost:8080/internal/task' \
+--header 'Content-Type: application/json' \
+--data 'not-valid-json'
+```
+
+Ответ:
+```json
+{
+    "error": "Invalid request body"
+}
+```
+
+**Отправка результата для несуществующей задачи**
+```bash
+curl --location 'http://localhost:8080/internal/task' \
+--header 'Content-Type: application/json' \
+--data '{
+    "id": 999,
+    "result": 42
+}'
+```
+
+Ответ:
+```json
+{
+    "error": "Task not found"
+}
 ```
 
 ## Настройка
@@ -255,8 +469,36 @@ curl --location 'http://localhost:8080/api/v1/expressions'
 - Просмотр подробной информации в JSON-формате
 - Очистка истории
 
+## Запуск тестов
+
+```bash
+# Запуск всех тестов
+cd calc-yandex-go
+make test
+
+# или напрямую
+go test ./... -v
+```
+
 ## Рекомендации по тестированию
 
 - Рекомендуется использовать Postman для тестирования API, так как с curl могут возникнуть проблемы
 - При использовании curl рекомендуется выполнять запросы через git bash терминал
 - Для тестирования асинхронных вычислений сделайте запрос, а затем периодически запрашивайте результат
+
+## Структура проекта
+```
+/calc-yandex-go/
+├── cmd/                     # Точки входа для исполняемых файлов
+│   ├── orchestrator/        # Оркестратор
+│   └── agent/               # Агент
+├── internal/                # Внутренние пакеты
+│   ├── agent/               # Логика агента
+│   ├── config/              # Конфигурация
+│   ├── models/              # Модели данных
+│   └── orchestrator/        # Логика оркестратора
+├── pkg/                     # Переиспользуемые пакеты
+│   └── calculation/         # Парсинг и вычисление выражений
+├── frontend/                # Next.js фронтенд
+└── docker-compose.yml       # Конфигурация Docker
+```
