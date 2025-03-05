@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"errors"
 	"regexp"
 	"strconv"
 
@@ -70,8 +71,13 @@ func CalculateHandler(service *Service) fiber.Handler {
 
 		id, err := service.AddExpression(req.Expression)
 		if err != nil {
+			if errors.Is(err, ErrInvalidExpression) {
+				return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
+					"error": "invalid expression",
+				})
+			}
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": err.Error(),
+				"error": "internal server error",
 			})
 		}
 
