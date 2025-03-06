@@ -11,10 +11,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.agent
-    ports:
-      - "8090:8090"
     environment:
       - ORCHESTRATOR_URL=http://orchestrator:8080
+    depends_on:
+      - orchestrator
 
   frontend:
     build:
@@ -23,15 +23,6 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://nginx/api 
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - NEXT_PUBLIC_API_URL=http://localhost:8080/api
     depends_on:
       - orchestrator
-      - agent
-      - frontend
