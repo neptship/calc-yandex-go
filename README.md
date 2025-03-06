@@ -51,6 +51,10 @@ docker-compose up
 **Клонирование репозитория и установка зависимостей**
 
 ```bash
+# Клонирование репозитория
+git clone https://github.com/neptship/calc-yandex-go
+cd calc-yandex-go
+
 # Установка Go модулей
 go mod tidy
 
