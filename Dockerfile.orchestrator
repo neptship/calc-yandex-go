@@ -1,14 +1,17 @@
 FROM golang:1.23.1-alpine AS builder
 WORKDIR /app
 
+# Установите зависимости для CGO
+RUN apk add --no-cache gcc musl-dev
+
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-RUN go build -o orchestrator ./cmd/orchestrator
+RUN CGO_ENABLED=1 go build -o orchestrator ./cmd/orchestrator
 
 FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/orchestrator .
-EXPOSE 8080
+EXPOSE 8080 8090
 CMD ["./orchestrator"]

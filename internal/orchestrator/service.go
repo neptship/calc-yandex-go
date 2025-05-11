@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/neptship/calc-yandex-go/internal/config"
+	"github.com/neptship/calc-yandex-go/internal/database"
 	"github.com/neptship/calc-yandex-go/internal/models"
 	"github.com/neptship/calc-yandex-go/pkg/calculation"
 )
@@ -17,6 +18,7 @@ var (
 	ErrTaskNotFound       = errors.New("task not found")
 	ErrInvalidExpression  = errors.New("invalid expression")
 	ErrInvalidTaskResult  = errors.New("invalid task result")
+	ErrUnauthorized       = errors.New("unauthorized")
 )
 
 type ExpressionResult struct {
@@ -25,76 +27,103 @@ type ExpressionResult struct {
 }
 
 type Service struct {
-	expressions      map[int]*models.Expression
-	tasks            map[int]*models.Task
-	results          map[string]*ExpressionResult
-	pendingTasks     []*models.Task
-	nextExpressionID int
-	nextTaskID       int
-	mu               sync.Mutex
-	config           *config.Config
+	db     *database.Database
+	config *config.Config
+	mu     sync.Mutex
+
+	tasks        map[int]*models.Task
+	pendingTasks []*models.Task
+	results      map[string]*ExpressionResult
+	expressions  map[int]*models.Expression
+	nextTaskID   int
 }
 
-func NewService(cfg *config.Config) *Service {
+func NewService(cfg *config.Config, db *database.Database) *Service {
 	return &Service{
-		expressions:      make(map[int]*models.Expression),
-		tasks:            make(map[int]*models.Task),
-		results:          make(map[string]*ExpressionResult),
-		pendingTasks:     []*models.Task{},
-		nextExpressionID: 1,
-		nextTaskID:       1,
-		config:           cfg,
+		db:           db,
+		config:       cfg,
+		tasks:        make(map[int]*models.Task),
+		pendingTasks: make([]*models.Task, 0),
+		results:      make(map[string]*ExpressionResult),
+		expressions:  make(map[int]*models.Expression),
+		nextTaskID:   1,
 	}
 }
 
-func (s *Service) AddExpression(expressionStr string) (int, error) {
+func (s *Service) AddExpression(userID int, expressionStr string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	ops, err := calculation.ParseExpression(expressionStr)
 	if err != nil {
-		log.Printf("Ошибка парсинга выражения: %v", err)
+		log.Printf("Error parsing expression: %v", err)
 		return 0, ErrInvalidExpression
 	}
 
-	expressionID := s.nextExpressionID
-	s.nextExpressionID++
-
-	expression := &models.Expression{
-		ID:         expressionID,
-		Expression: expressionStr,
-		Status:     models.StatusPending,
-		Result:     nil,
+	expressionID, err := s.db.SaveExpression(userID, expressionStr, models.StatusProcessing)
+	if err != nil {
+		log.Printf("Error saving expression: %v", err)
+		return 0, fmt.Errorf("failed to save expression: %w", err)
 	}
-	s.expressions[expressionID] = expression
-	log.Printf("Добавлено выражение ID=%d: %s", expressionID, expressionStr)
 
-	expression.Status = models.StatusProcessing
-	s.createTasksFromOperations(expressionID, ops)
+	log.Printf("Added expression ID=%d for user ID=%d: %s", expressionID, userID, expressionStr)
+
+	err = s.createTasksFromOperations(userID, expressionID, ops)
+	if err != nil {
+		log.Printf("Error creating tasks for expression ID=%d: %v", expressionID, err)
+		return 0, fmt.Errorf("failed to create tasks: %w", err)
+	}
 
 	return expressionID, nil
 }
 
-func (s *Service) GetExpressionByID(id int) (*models.Expression, error) {
+func (s *Service) AddSimpleExpression(userID int, expressionStr string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	expr, exists := s.expressions[id]
-	if !exists {
+	value, err := strconv.ParseFloat(expressionStr, 64)
+	if err != nil {
+		return 0, ErrInvalidExpression
+	}
+
+	expressionID, err := s.db.SaveExpression(userID, expressionStr, models.StatusCompleted)
+	if err != nil {
+		return 0, fmt.Errorf("failed to save expression: %w", err)
+	}
+
+	err = s.db.SetExpressionResult(expressionID, value)
+	if err != nil {
+		return 0, fmt.Errorf("failed to set expression result: %w", err)
+	}
+
+	log.Printf("Added simple expression ID=%d for user ID=%d: %s = %f", expressionID, userID, expressionStr, value)
+	return expressionID, nil
+}
+
+func (s *Service) GetExpressionByID(userID, expressionID int) (*models.Expression, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	expr, err := s.db.GetExpression(expressionID)
+	if err != nil {
 		return nil, ErrExpressionNotFound
 	}
+
+	var exprUserID int
+	err = s.db.GetDB().QueryRow("SELECT user_id FROM expressions WHERE id = ?", expressionID).Scan(&exprUserID)
+	if err != nil {
+		return nil, ErrExpressionNotFound
+	}
+
+	if exprUserID != userID {
+		return nil, ErrUnauthorized
+	}
+
 	return expr, nil
 }
 
-func (s *Service) GetAllExpressions() []*models.Expression {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	expressions := make([]*models.Expression, 0, len(s.expressions))
-	for _, expr := range s.expressions {
-		expressions = append(expressions, expr)
-	}
-	return expressions
+func (s *Service) GetAllExpressions(userID int) ([]*models.Expression, error) {
+	return s.db.GetUserExpressions(userID)
 }
 
 func (s *Service) GetNextTask() (*models.Task, error) {
@@ -144,11 +173,12 @@ func (s *Service) GetNextTask() (*models.Task, error) {
 				taskToExecute.OperationTime = s.config.DivisionMs
 			}
 
-			log.Printf("Выдана задача ID=%d, операция=%s для выражения ID=%d",
+			log.Printf("Task ID=%d, operation=%s for expression ID=%d assigned",
 				taskToExecute.ID, taskToExecute.Operation, taskToExecute.ExpressionID)
 			return taskToExecute, nil
 		}
 	}
+
 	return nil, ErrTaskNotFound
 }
 
@@ -161,43 +191,25 @@ func (s *Service) SetTaskResult(id int, result float64) error {
 		return ErrTaskNotFound
 	}
 
+	err := s.db.SetTaskResult(id, result)
+	if err != nil {
+		return fmt.Errorf("failed to save task result: %w", err)
+	}
+
 	resultID := getResultID(task.ExpressionID, id)
 	s.results[resultID] = &ExpressionResult{
 		Value:     result,
 		Completed: true,
 	}
-	log.Printf("Получен результат для задачи ID=%d: %f", id, result)
+
+	log.Printf("Received result for task ID=%d: %f", id, result)
 
 	s.checkExpressionCompletion(task.ExpressionID)
 
 	return nil
 }
 
-func (s *Service) AddSimpleExpression(expressionStr string) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	value, err := strconv.ParseFloat(expressionStr, 64)
-	if err != nil {
-		return 0, ErrInvalidExpression
-	}
-
-	expressionID := s.nextExpressionID
-	s.nextExpressionID++
-
-	expression := &models.Expression{
-		ID:         expressionID,
-		Expression: expressionStr,
-		Status:     models.StatusCompleted,
-		Result:     &value,
-	}
-	s.expressions[expressionID] = expression
-	log.Printf("Добавлено простое выражение ID=%d: %s, результат=%f", expressionID, expressionStr, value)
-
-	return expressionID, nil
-}
-
-func (s *Service) createTasksFromOperations(expressionID int, ops []calculation.Operation) {
+func (s *Service) createTasksFromOperations(userID, expressionID int, ops []calculation.Operation) error {
 	opToTaskMap := make(map[int]int)
 
 	for i, op := range ops {
@@ -231,7 +243,16 @@ func (s *Service) createTasksFromOperations(expressionID int, ops []calculation.
 		s.tasks[taskID] = task
 		s.pendingTasks = append(s.pendingTasks, task)
 
-		log.Printf("Создана задача ID=%d (%s) для выражения ID=%d",
+		dbTaskID, err := s.db.SaveTask(task)
+		if err != nil {
+			return fmt.Errorf("failed to save task to database: %w", err)
+		}
+
+		if dbTaskID != taskID {
+			log.Printf("Warning: memory taskID %d differs from database taskID %d", taskID, dbTaskID)
+		}
+
+		log.Printf("Created task ID=%d (%s) for expression ID=%d",
 			taskID, task.Operation, expressionID)
 
 		if i == len(ops)-1 {
@@ -240,14 +261,27 @@ func (s *Service) createTasksFromOperations(expressionID int, ops []calculation.
 				Value:     0,
 				Completed: false,
 			}
+
+			err := s.db.SaveResult(rootID, expressionID, &taskID, 0, false)
+			if err != nil {
+				return fmt.Errorf("failed to save root result: %w", err)
+			}
 		}
 	}
+
+	return nil
 }
 
 func (s *Service) checkExpressionCompletion(expressionID int) {
 	expr, exists := s.expressions[expressionID]
 	if !exists {
-		return
+		dbExpr, err := s.db.GetExpression(expressionID)
+		if err != nil {
+			log.Printf("Error loading expression ID=%d: %v", expressionID, err)
+			return
+		}
+		expr = dbExpr
+		s.expressions[expressionID] = expr
 	}
 
 	var lastTaskID int
@@ -264,7 +298,13 @@ func (s *Service) checkExpressionCompletion(expressionID int) {
 		if exists && result.Completed {
 			expr.Status = models.StatusCompleted
 			expr.Result = &result.Value
-			log.Printf("Выражение ID=%d завершено успешно, результат=%f",
+
+			err := s.db.SetExpressionResult(expressionID, result.Value)
+			if err != nil {
+				log.Printf("Error updating expression result in database: %v", err)
+			}
+
+			log.Printf("Expression ID=%d completed successfully, result=%f",
 				expressionID, result.Value)
 			return
 		}
@@ -286,11 +326,23 @@ func (s *Service) checkExpressionCompletion(expressionID int) {
 
 	if totalTasks > 0 && completedTasks == totalTasks && expr.Status != models.StatusCompleted {
 		expr.Status = models.StatusFailed
-		log.Printf("Выражение ID=%d помечено как FAILED: все задачи выполнены, но нет финального результата",
+
+		err := s.db.UpdateExpressionStatus(expressionID, models.StatusFailed)
+		if err != nil {
+			log.Printf("Error updating expression status in database: %v", err)
+		}
+
+		log.Printf("Expression ID=%d marked as FAILED: all tasks completed but no final result",
 			expressionID)
 	} else if completedTasks < totalTasks {
 		expr.Status = models.StatusProcessing
-		log.Printf("Выражение ID=%d в процессе: выполнено %d/%d задач",
+
+		err := s.db.UpdateExpressionStatus(expressionID, models.StatusProcessing)
+		if err != nil {
+			log.Printf("Error updating expression status in database: %v", err)
+		}
+
+		log.Printf("Expression ID=%d in progress: %d/%d tasks completed",
 			expressionID, completedTasks, totalTasks)
 	}
 }
@@ -318,11 +370,21 @@ func (s *Service) SetTaskError(id int, errorMsg string) error {
 		Completed: true,
 	}
 
-	log.Printf("Задача ID=%d завершилась с ошибкой: %s", id, errorMsg)
+	err := s.db.SaveResult(resultID, task.ExpressionID, &id, 0, true)
+	if err != nil {
+		log.Printf("Error saving result to database: %v", err)
+	}
+
+	log.Printf("Task ID=%d failed with error: %s", id, errorMsg)
 
 	expr, exists := s.expressions[task.ExpressionID]
 	if exists {
 		expr.Status = models.StatusFailed
+
+		err := s.db.UpdateExpressionStatus(task.ExpressionID, models.StatusFailed)
+		if err != nil {
+			log.Printf("Error updating expression status in database: %v", err)
+		}
 	}
 
 	return nil

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, LogOut, History } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/contexts/auth-context";
 
 export default function Calculator() {
   const searchParams = useSearchParams();
@@ -11,13 +12,18 @@ export default function Calculator() {
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expressionId, setExpressionId] = useState<number | null>(null);
-  const [history, setHistory] = useState<string[]>([])
+  const [history, setHistory] = useState<any[]>([]);
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
+  const { token, logout, user } = useAuth();
 
   useEffect(() => {
-    const savedHistory = localStorage.getItem("calculatorHistory")
+    const savedHistory = localStorage.getItem("calculatorHistory");
     if (savedHistory) {
-      setHistory(JSON.parse(savedHistory))
+      try {
+        setHistory(JSON.parse(savedHistory));
+      } catch (e) {
+        console.error("Failed to parse history:", e);
+      }
     }
     const expressionParam = searchParams.get("expression");
     const resultParam = searchParams.get("result");
@@ -31,11 +37,47 @@ export default function Calculator() {
     }
   }, [searchParams]);
 
+  const saveToHistory = (historyItem: any) => {
+    try {
+      const skipErrors = ["Expression cannot be empty", "= Expression cannot be empty"];
+      
+      if (skipErrors.includes(historyItem.result)) {
+        console.log(`Пропускаем сохранение ошибки: ${historyItem.result}`);
+        return;
+      }
+      
+      const storageKey = user?.username ? `calculationsHistory_${user.username}` : "calculationsHistory";
+      console.log(`Сохраняем историю для пользователя ${user?.username} с ключом ${storageKey}`);
+      
+      const savedHistory = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      const updatedHistory = [historyItem, ...savedHistory].slice(0, 50);
+      localStorage.setItem(storageKey, JSON.stringify(updatedHistory));
+      
+      setHistory(updatedHistory);
+    } catch (e) {
+      console.error("Failed to save to history:", e);
+    }
+  };
+
   useEffect(() => {
     if (expressionId !== null && loading) {
       const pollResult = async () => {
         try {
-          const response = await fetch(`http://localhost:8080/api/v1/expressions/${expressionId}`);
+          if (!token) {
+            throw new Error("Not authenticated");
+          }
+
+          const response = await fetch(`http://localhost:8080/api/v1/expressions/${expressionId}`, {
+            headers: {
+              "Authorization": `Bearer ${token}`
+            }
+          });
+
+          if (response.status === 401) {
+            logout();
+            return;
+          }
+          
           if (!response.ok) {
             throw new Error("Ошибка получения результата");
           }
@@ -68,20 +110,23 @@ export default function Calculator() {
               });
             } else {
               setResult("Ошибка вычисления");
-              
+  
               const { expression: _, ...dataWithoutExpression } = data;
               
-              saveToHistory({
-                expression: expression,
-                result: "Ошибка вычисления",
-                timestamp: new Date().toISOString(),
-                fullData: {
-                  expression: {
-                    id: fetchedExpr.id,
-                    status: fetchedExpr.status
+              const skipErrorsInHistory = ["Expression cannot be empty", "= Expression cannot be empty"];
+              if (!skipErrorsInHistory.includes("Ошибка вычисления")) {
+                saveToHistory({
+                  expression: expression,
+                  result: "Ошибка вычисления",
+                  timestamp: new Date().toISOString(),
+                  fullData: {
+                    expression: {
+                      id: fetchedExpr.id,
+                      status: fetchedExpr.status
+                    }
                   }
-                }
-              });
+                });
+              }
             }
             
             setLoading(false);
@@ -110,7 +155,7 @@ export default function Calculator() {
         }
       };
     }
-  }, [expressionId, loading]);
+  }, [expressionId, loading, token, logout, expression]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -119,14 +164,13 @@ export default function Calculator() {
     }
   };
 
-  const saveToHistory = (historyItem: any) => {
-    const savedHistory = JSON.parse(localStorage.getItem("calculationsHistory") || "[]");
-    const updatedHistory = [historyItem, ...savedHistory].slice(0, 50);
-    localStorage.setItem("calculationsHistory", JSON.stringify(updatedHistory));
-  };
-
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    if (!token) {
+      return;
+    }
+    
     setLoading(true);
     setResult(null);
     setExpressionId(null);
@@ -136,30 +180,44 @@ export default function Calculator() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({ expression }),
       });
+
+      if (res.status === 401) {
+        logout();
+        return;
+      }
       
       const data = await res.json();
       
       if (!res.ok || data.error) {
         let errorMsg = data.error;
+        
+        const skipErrorsInHistory = ["Expression cannot be empty", "= Expression cannot be empty"];
+        
         if (data.error === "Invalid expression" || data.error === "invalid expression") {
           errorMsg = "Недопустимое выражение";
           setResult(errorMsg);
         } else if (!data.error) {
           errorMsg = "Неизвестная ошибка";
-          saveToHistory({
-            expression: expression,
-            result: errorMsg,
-            timestamp: new Date().toISOString(),
-          });
+          
+          if (!skipErrorsInHistory.includes(errorMsg)) {
+            saveToHistory({
+              expression: expression,
+              result: errorMsg,
+              timestamp: new Date().toISOString(),
+            });
+          }
         } else {
-          saveToHistory({
-            expression: expression,
-            result: errorMsg,
-            timestamp: new Date().toISOString(),
-          });
+          if (!skipErrorsInHistory.includes(errorMsg)) {
+            saveToHistory({
+              expression: expression,
+              result: errorMsg,
+              timestamp: new Date().toISOString(),
+            });
+          }
         }
         
         setLoading(false);
@@ -167,7 +225,7 @@ export default function Calculator() {
       }
       
       if (data.status === "completed" && data.result !== undefined) {
-        setResult(data.result);
+        setResult(data.result.toString());
         setLoading(false);
         
         const { expression: _, ...dataWithoutExpression } = data;
@@ -184,25 +242,27 @@ export default function Calculator() {
       
       setExpressionId(data.id);
     } catch (error) {
-      const errorMsg = "Ошибка запроса";
-      setResult(errorMsg);
-      
-      saveToHistory({
-        expression: expression,
-        result: errorMsg,
-        timestamp: new Date().toISOString(),
-        fullData: { error }
-      });
-      
+      console.error("Error during calculation:", error);
+      setResult("Ошибка запроса");
       setLoading(false);
     }
   };
 
   return (
     <div className="w-full max-w-md space-y-4 animate-fade-in relative">
-      <Link href="/history" className="absolute -top-12 right-0 text-white/70 hover:text-white transition-colors">
-        История
-      </Link>
+      <div className="absolute -top-12 right-0 flex items-center gap-4">
+        <Link href="/history" className="text-white/70 hover:text-white transition-colors flex items-center gap-1">
+          <History size={16} />
+          <span>История</span>
+        </Link>
+        <button 
+          onClick={logout} 
+          className="text-white/70 hover:text-white transition-colors flex items-center gap-1"
+        >
+          <LogOut size={16} />
+          <span>Выйти</span>
+        </button>
+      </div>
       <div className="relative">
         <input
           type="text"

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { tomorrow } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useAuth } from "@/contexts/auth-context";
 
 interface HistoryItem {
   expression: string;
@@ -16,10 +17,28 @@ interface HistoryItem {
 export default function HistoryPage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
+  const { user, token } = useAuth();
+  const [debugInfo, setDebugInfo] = useState("");
 
   useEffect(() => {
+    if (user) {
+      setDebugInfo(`Текущий пользователь: ${user.username}`);
+    } else {
+      setDebugInfo("Пользователь не определен");
+    }
+
+    setHistory([]);
+
     try {
-      const savedHistory = localStorage.getItem("calculationsHistory");
+      if (!user || !token) {
+        return;
+      }
+
+      const storageKey = `calculationsHistory_${user.username || 'unknown'}`;
+      console.log(`Загрузка истории для пользователя ${user.username} с ключом ${storageKey}`);
+      
+      const savedHistory = localStorage.getItem(storageKey);
+      
       if (savedHistory) {
         const parsedHistory = JSON.parse(savedHistory);
         
@@ -36,17 +55,19 @@ export default function HistoryPage() {
       }
     } catch (error) {
       console.error("Error loading history:", error);
-      localStorage.removeItem("calculationsHistory");
       setHistory([]);
     }
-  }, []);
+  }, [user, token]);
 
   const toggleExpanded = (index: number) => {
     setExpandedItem(expandedItem === index ? null : index);
   };
 
   const clearHistory = () => {
-    localStorage.removeItem("calculationsHistory");
+    if (!user) return;
+    
+    const storageKey = `calculationsHistory_${user.username || 'unknown'}`;
+    localStorage.removeItem(storageKey);
     setHistory([]);
   };
 
@@ -73,13 +94,15 @@ export default function HistoryPage() {
         </div>
         
         <h1 className="text-2xl font-bold text-white mb-4">История запросов</h1>
+        
+        <div className="text-xs text-white/50 mb-4">{debugInfo}</div>
+        
         {history.length === 0 && <p className="text-white/50">История вычислений пуста</p>}
         
         {history.map((item, i) => (
           <div key={i} className="bg-white/10 p-3 rounded-md mb-2">
             <div className="flex justify-between items-center">
               <div className="text-sm">
-                {/* Safely render expression with proper type checking */}
                 <span className="text-white">
                   {item.expression}
                 </span>

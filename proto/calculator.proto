@@ -1,0 +1,52 @@
+syntax = "proto3";
+package calculator;
+
+option go_package = "github.com/neptship/calc-yandex-go/proto";
+
+// AgentService defines the service interface between orchestrator and agents
+service AgentService {
+  // GetTask retrieves a task from the orchestrator
+  rpc GetTask (GetTaskRequest) returns (TaskResponse);
+  
+  // SubmitTaskResult sends the calculated result back to the orchestrator
+  rpc SubmitTaskResult (TaskResultRequest) returns (TaskResultResponse);
+}
+
+// GetTaskRequest is an empty request to get a task
+message GetTaskRequest {
+  // Empty request
+}
+
+// TaskResponse contains all details about a calculation task
+message TaskResponse {
+  int32 task_id = 1;
+  int32 expression_id = 2;
+  string operation = 3;
+  int32 operation_time = 4;
+  
+  // Arg1 can be either a number or a string reference
+  oneof arg1 {
+    double number_arg1 = 5;
+    string string_arg1 = 6;
+  }
+  
+  // Arg2 can be either a number or a string reference
+  oneof arg2 {
+    double number_arg2 = 7;
+    string string_arg2 = 8;
+  }
+}
+
+// TaskResultRequest sends a calculation result back
+message TaskResultRequest {
+  int32 task_id = 1;
+  double result = 2;
+  bool is_error = 3;
+  string error_message = 4;
+}
+
+// TaskResultResponse indicates whether the result was accepted
+message TaskResultResponse {
+  bool success = 1;
+  string message = 2;
+}

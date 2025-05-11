@@ -43,6 +43,8 @@ type TaskResultRequest struct {
 
 func CalculateHandler(service *Service) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		userID := c.Locals("userID").(int)
+
 		var req CalculateRequest
 		if err := c.BodyParser(&req); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -57,7 +59,7 @@ func CalculateHandler(service *Service) fiber.Handler {
 		}
 
 		if matched, _ := regexp.MatchString(`^-?\d+(\.\d+)?$`, req.Expression); matched {
-			id, err := service.AddSimpleExpression(req.Expression)
+			id, err := service.AddSimpleExpression(userID, req.Expression)
 			if err != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 					"error": err.Error(),
@@ -69,7 +71,7 @@ func CalculateHandler(service *Service) fiber.Handler {
 			})
 		}
 
-		id, err := service.AddExpression(req.Expression)
+		id, err := service.AddExpression(userID, req.Expression)
 		if err != nil {
 			if errors.Is(err, ErrInvalidExpression) {
 				return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
@@ -89,10 +91,17 @@ func CalculateHandler(service *Service) fiber.Handler {
 
 func GetExpressionsHandler(service *Service) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		expressionsOriginal := service.GetAllExpressions()
+		userID := c.Locals("userID").(int)
 
-		cleanExpressions := make([]*ExpressionWithoutDuplication, len(expressionsOriginal))
-		for i, expr := range expressionsOriginal {
+		expressions, err := service.GetAllExpressions(userID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to get expressions",
+			})
+		}
+
+		cleanExpressions := make([]*ExpressionWithoutDuplication, len(expressions))
+		for i, expr := range expressions {
 			cleanExpressions[i] = &ExpressionWithoutDuplication{
 				ID:     expr.ID,
 				Status: string(expr.Status),
@@ -108,6 +117,8 @@ func GetExpressionsHandler(service *Service) fiber.Handler {
 
 func GetExpressionHandler(service *Service) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		userID := c.Locals("userID").(int)
+
 		idStr := c.Params("id")
 		id, err := strconv.Atoi(idStr)
 		if err != nil {
@@ -116,11 +127,15 @@ func GetExpressionHandler(service *Service) fiber.Handler {
 			})
 		}
 
-		expression, err := service.GetExpressionByID(id)
+		expression, err := service.GetExpressionByID(userID, id)
 		if err != nil {
 			if err == ErrExpressionNotFound {
 				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 					"error": "Expression not found",
+				})
+			} else if err == ErrUnauthorized {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+					"error": "Access denied",
 				})
 			}
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{

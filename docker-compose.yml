@@ -6,6 +6,7 @@ services:
       dockerfile: Dockerfile.orchestrator
     ports:
       - "8080:8080"
+      - "8090:8090"
 
   agent:
     build:
@@ -13,9 +14,10 @@ services:
       dockerfile: Dockerfile.agent
     environment:
       - ORCHESTRATOR_URL=http://orchestrator:8080
+      - GRPC_HOST=orchestrator
+      - GRPC_PORT=8090
     depends_on:
       - orchestrator
-
   frontend:
     build:
       context: .
