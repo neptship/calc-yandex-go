@@ -1,17 +1,47 @@
 # сalc-yandex-go
 
-Cервис на Go для вычисления арифметических выражений. Сервис принимает математические выражения через POST-запросы и возвращает вычисленные результаты.
+Cервис на Go для вычисления арифметических выражений. Сервис принимает математические выражения через POST-запросы и возвращает вычисленные результаты с использованием распределенной архитектуры.
 
 ## Функциональность
 
 - Асинхронное вычисление арифметических выражений
 - Поддержка базовых арифметических операций (+, -, *, /)
 - Поддержка скобок для управления порядком операций
-- Формат обмена данными JSON
+- Формат обмена данными JSON для HTTP API
+- gRPC для высокопроизводительной коммуникации между компонентами
 - Распределённое выполнение операций между агентами
 - История вычислений с подробной информацией
+- Аутентификация пользователей
 - Веб-интерфейс для удобного использования
 - Обработка ошибок с соответствующими HTTP-кодами
+
+## Архитектура
+
+```mermaid
+flowchart TD
+    U[Пользователь] <--> |HTTP REST API| F[Фронтенд Next.js]
+    F <--> |HTTP REST API| O[Оркестратор Go]
+    O <--> |SQLite| DB[(База данных)]
+    O <--> |gRPC| A1[Агент Go 1]
+    O <--> |gRPC| A2[Агент Go 2]
+    O <--> |gRPC| A3[Агент Go N]
+    
+    subgraph Вычисления
+        A1
+        A2
+        A3
+    end
+    
+    subgraph Оркестрация
+        O
+        DB
+    end
+    
+    subgraph Интерфейсы
+        F
+        U
+    end
+```
 
 ## Установка и запуск
 
@@ -33,7 +63,7 @@ cd calc-yandex-go
 # Установка всех зависимостей (Go модулей и npm пакетов)
 make install
 
-# Запуск всех компонентов (оркестратор, агент, фронтенд)
+# Запуск всех компонентов (оркестратор, агенты, фронтенд)
 make run-all
 ```
 
@@ -75,7 +105,7 @@ go run cmd/orchestrator/main.go
 go run cmd/agent/main.go
 ```
 
-По умолчанию оркестратор запускается на порту 8080.
+По умолчанию оркестратор запускается на порту 8080 для HTTP и 8090 для gRPC.
 
 ### Запуск фронтенда
 
@@ -86,16 +116,50 @@ npm run dev
 
 Веб-интерфейс будет доступен по адресу: http://localhost:3000
 
-## API Спецификация
 
-```mermaid
-flowchart LR
-    A[Фронтенд Next.js] -->|Отправка выражения| B[Оркестратор Go]
-    B -->|Задачи с указанным временем| C[Агенты Go]
-    C -->|Результаты операций| B
-    B -->|Итоговый ответ| A
+## REST API Спецификация
+
+### Аутентификация
+
+#### POST /api/v1/register
+Регистрация нового пользователя.
+
+**Формат запроса:**
+```json
+{
+    "username": "user1",
+    "password": "password123"
+}
 ```
-### POST /api/v1/calculate
+
+**Успешный ответ (201 Created):**
+```json
+{
+    "message": "User registered successfully"
+}
+```
+
+#### POST /api/v1//login
+Вход в систему.
+
+**Формат запроса:**
+```json
+{
+    "username": "user1",
+    "password": "password123"
+}
+```
+
+**Успешный ответ (200 OK):**
+```json
+{
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+### Вычисления
+
+#### POST /api/v1/calculate
 
 Отправляет выражение на вычисление и возвращает идентификатор задачи.
 
@@ -127,7 +191,7 @@ flowchart LR
 }
 ```
 
-### GET /api/v1/expressions/:id
+#### GET /api/v1/expressions/:id
 
 Получает статус и результат вычисления по идентификатору.
 
@@ -162,7 +226,7 @@ flowchart LR
 }
 ```
 
-### GET /api/v1/expressions
+#### GET /api/v1/expressions
 
 Получает список всех выражений и их статусов.
 
@@ -184,61 +248,37 @@ flowchart LR
 }
 ```
 
-### GET /internal/task
-Получает задачу для выполнения агентом.
-
-**Успешный ответ (200 OK):**
-```json
-{
-    "task": {
-        "id": 1,
-        "arg1": 2,
-        "arg2": 2,
-        "operation": "+",
-        "operation_time": 1000
-    }
-}
-```
-
-**Ответ, если нет доступных задач (404 Not Found):**
-```json
-{
-    "error": "No tasks available"
-}
-```
-
-### POST /internal/task
-Отправляет результат выполнения задачи.
-
-**Формат запроса:**
-```json
-{
-    "id": 1,
-    "result": 4
-}
-```
-**Успешный ответ (200 OK):**
-```json
-{
-    "success": true
-}
-```
-**Ответ, если задача не найдена (404 Not Found):**
-```json
-{
-    "error": "Task not found"
-}
-```
-
-
 ## Примеры использования
 
-### Успешные сценарии
+### Регистрация и авторизация
 
-**Отправка выражения на вычисление**
+**Регистрация нового пользователя:**
+```bash
+curl --location 'http://localhost:8080/register' \
+--header 'Content-Type: application/json' \
+--data '{
+    "username": "test_user",
+    "password": "password123"
+}'
+```
+
+**Авторизация:**
+```bash
+curl --location 'http://localhost:8080/login' \
+--header 'Content-Type: application/json' \
+--data '{
+    "username": "test_user",
+    "password": "password123"
+}'
+```
+
+### Успешные сценарии вычислений
+
+**Отправка выражения на вычисление:**
 ```bash
 curl --location 'http://localhost:8080/api/v1/calculate' \
 --header 'Content-Type: application/json' \
+--header 'Authorization: Bearer JWT_TOKEN' \
 --data '{
     "expression": "2+2*2"
 }'
@@ -251,10 +291,11 @@ curl --location 'http://localhost:8080/api/v1/calculate' \
 }
 ```
 
-**Отправка сложного выражения**
+**Отправка сложного выражения:**
 ```bash
 curl --location 'http://localhost:8080/api/v1/calculate' \
 --header 'Content-Type: application/json' \
+--header 'Authorization: Bearer JWT_TOKEN' \
 --data '{
     "expression": "(70/7) * 10 /((3+2) * (3+7)) - 2"
 }'
@@ -267,9 +308,10 @@ curl --location 'http://localhost:8080/api/v1/calculate' \
 }
 ```
 
-**Получение результата вычисления**
+**Получение результата вычисления:**
 ```bash
-curl --location 'http://localhost:8080/api/v1/expressions/1'
+curl --location 'http://localhost:8080/api/v1/expressions/1' \
+--header 'Authorization: Bearer JWT_TOKEN'
 ```
 
 Ответ:
@@ -283,9 +325,10 @@ curl --location 'http://localhost:8080/api/v1/expressions/1'
 }
 ```
 
-**Получение списка всех выражений**
+**Получение списка всех выражений:**
 ```bash
-curl --location 'http://localhost:8080/api/v1/expressions'
+curl --location 'http://localhost:8080/api/v1/expressions' \
+--header 'Authorization: Bearer JWT_TOKEN'
 ```
 
 Ответ:
@@ -305,47 +348,13 @@ curl --location 'http://localhost:8080/api/v1/expressions'
 }
 ```
 
-**Получение задачи агентом**
-```bash
-curl --location 'http://localhost:8080/internal/task'
-```
-
-Ответ:
-```json
-{
-    "task": {
-        "id": 3,
-        "arg1": 3,
-        "arg2": 5,
-        "operation": "+",
-        "operation_time": 1000
-    }
-}
-```
-
-**Отправка результата задачи**
-```bash
-curl --location 'http://localhost:8080/internal/task' \
---header 'Content-Type: application/json' \
---data '{
-    "id": 3,
-    "result": 8
-}'
-```
-
-Ответ:
-```json
-{
-    "success": true
-}
-```
-
 ### Обработка ошибок
 
-**Невалидный JSON при отправке выражения**
+**Невалидный JSON при отправке выражения:**
 ```bash
 curl --location 'http://localhost:8080/api/v1/calculate' \
 --header 'Content-Type: application/json' \
+--header 'Authorization: Bearer JWT_TOKEN' \
 --data 'not-valid-json'
 ```
 
@@ -356,10 +365,11 @@ curl --location 'http://localhost:8080/api/v1/calculate' \
 }
 ```
 
-### Некорректное выражение
+**Некорректное выражение:**
 ```bash
 curl --location 'http://localhost:8080/api/v1/calculate' \
 --header 'Content-Type: application/json' \
+--header 'Authorization: Bearer JWT_TOKEN' \
 --data '{
     "expression": "2+*2"
 }'
@@ -372,9 +382,10 @@ curl --location 'http://localhost:8080/api/v1/calculate' \
 }
 ```
 
-**Запрос несуществующего выражения**
+**Запрос несуществующего выражения:**
 ```bash
-curl --location 'http://localhost:8080/api/v1/expressions/999'
+curl --location 'http://localhost:8080/api/v1/expressions/999' \
+--header 'Authorization: Bearer JWT_TOKEN'
 ```
 
 Ответ:
@@ -384,10 +395,11 @@ curl --location 'http://localhost:8080/api/v1/expressions/999'
 }
 ```
 
-**Деление на ноль**
+**Деление на ноль:**
 ```bash
 curl --location 'http://localhost:8080/api/v1/calculate' \
 --header 'Content-Type: application/json' \
+--header 'Authorization: Bearer JWT_TOKEN' \
 --data '{
     "expression": "5/0"
 }'
@@ -404,74 +416,12 @@ curl --location 'http://localhost:8080/api/v1/calculate' \
 }
 ```
 
-**Запрос задачи, когда нет доступных задач**
-```bash
-curl --location 'http://localhost:8080/internal/task'
-```
-
-Ответ:
-```json
-{
-    "error": "No tasks available"
-}
-```
-
-**Некорректный запрос при отправке результата задачи**
-```bash
-curl --location 'http://localhost:8080/internal/task' \
---header 'Content-Type: application/json' \
---data 'not-valid-json'
-```
-
-Ответ:
-```json
-{
-    "error": "Invalid request body"
-}
-```
-
-**Отправка результата для несуществующей задачи**
-```bash
-curl --location 'http://localhost:8080/internal/task' \
---header 'Content-Type: application/json' \
---data '{
-    "id": 999,
-    "result": 42
-}'
-```
-
-Ответ:
-```json
-{
-    "error": "Task not found"
-}
-```
-
-## Настройка
-
-Система настраивается через переменные окружения:
-- `PORT` - порт для HTTP-сервера (по умолчанию 8080)
-- `COMPUTING_POWER` - количество параллельных вычислителей в агенте (по умолчанию 3)
-- `TIME_ADDITION_MS` - время выполнения сложения (по умолчанию 1000 мс)
-- `TIME_SUBTRACTION_MS` - время выполнения вычитания (по умолчанию 1000 мс)
-- `TIME_MULTIPLICATIONS_MS` - время выполнения умножения (по умолчанию 1500 мс)
-- `TIME_DIVISIONS_MS` - время выполнения деления (по умолчанию 2000 мс)
-
-
 ## Ограничения
 
-- Поддерживаются только положительные целые числа
-- Использование унарного минуса или плюса приведет к некорректной работе
-- Поддерживаются только POST-запросы
+- Поддерживаются только положительные целые и десятичные числа
+- Использование унарного минуса или плюса может привести к некорректной работе
 - Все нестандартные символы в выражении (буквы, спецсимволы) приведут к ошибке 422
-
-## Веб-интерфейс
-Веб-интерфейс предоставляет следующие возможности:
-- Ввод арифметических выражений
-- Отображение прогресса вычислений в реальном времени
-- История вычислений с результатами
-- Просмотр подробной информации в JSON-формате
-- Очистка истории
+- Для доступа к API необходимо указывать JWT-токен
 
 ## Запуск тестов
 
@@ -482,27 +432,7 @@ make test
 
 # или напрямую
 go test ./... -v
-```
 
-## Рекомендации по тестированию
-
-- Рекомендуется использовать Postman для тестирования API, так как с curl могут возникнуть проблемы
-- При использовании curl рекомендуется выполнять запросы через git bash терминал
-- Для тестирования асинхронных вычислений сделайте запрос, а затем периодически запрашивайте результат
-
-## Структура проекта
-```
-/calc-yandex-go/
-├── cmd/                     # Точки входа для исполняемых файлов
-│   ├── orchestrator/        # Оркестратор
-│   └── agent/               # Агент
-├── internal/                # Внутренние пакеты
-│   ├── agent/               # Логика агента
-│   ├── config/              # Конфигурация
-│   ├── models/              # Модели данных
-│   └── orchestrator/        # Логика оркестратора
-├── pkg/                     # Переиспользуемые пакеты
-│   └── calculation/         # Парсинг и вычисление выражений
-├── frontend/                # Next.js фронтенд
-└── docker-compose.yml       # Конфигурация Docker
+# Запуск тестов для конкретного пакета
+go test ./internal/orchestrator -v
 ```
