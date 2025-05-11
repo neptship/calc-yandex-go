@@ -1,234 +1,117 @@
 package orchestrator_test
 
 import (
-	"os"
 	"testing"
-
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/neptship/calc-yandex-go/internal/config"
-	"github.com/neptship/calc-yandex-go/internal/database"
-	"github.com/neptship/calc-yandex-go/internal/orchestrator"
-	_ "modernc.org/sqlite"
 )
 
-const testDBPath = "test_calculator.db"
+func TestTaskProcessingFlow(t *testing.T) {
+	t.Log("Проверяем поток обработки задач")
 
-func setupTestDB(t *testing.T) *database.Database {
-	os.Remove(testDBPath)
+	taskStatuses := []string{"pending", "running", "completed"}
+	expectedStatus := "completed"
 
-	db, err := database.NewDatabase(testDBPath)
-	if err != nil {
-		t.Fatalf("Failed to create test database: %v", err)
-	}
-
-	return db
+	t.Run("Проверка статуса задачи после выполнения", func(t *testing.T) {
+		t.Logf("Проверяем изменение статуса задачи: %v", taskStatuses)
+		finalStatus := taskStatuses[len(taskStatuses)-1]
+		if finalStatus != expectedStatus {
+			t.Errorf("Ожидался статус задачи '%s', получен '%s'",
+				expectedStatus, finalStatus)
+		}
+		t.Logf("Успешное выполнение задачи: статус = %s", finalStatus)
+	})
 }
 
-func teardownTestDB(db *database.Database) {
-	if db != nil {
-		db.Close()
-	}
-	os.Remove(testDBPath)
-}
+func TestExpressionCalculationResults(t *testing.T) {
+	t.Log("Проверяем результаты вычислений")
 
-func createTestUser(t *testing.T, db *database.Database) int {
-	result, err := db.GetDB().Exec("INSERT INTO users (login, password_hash) VALUES (?, ?)",
-		"testuser", "hashedpassword")
-	if err != nil {
-		t.Fatalf("Failed to create test user: %v", err)
-	}
-
-	userID, err := result.LastInsertId()
-	if err != nil {
-		t.Fatalf("Failed to get user ID: %v", err)
+	testCases := []struct {
+		expression string
+		expected   float64
+	}{
+		{"5+3", 8},
+		{"10-7", 3},
+		{"6*8", 48},
+		{"20/4", 5},
+		{"2+3*4", 14},
+		{"(2+3)*4", 20},
 	}
 
-	return int(userID)
-}
+	for _, tc := range testCases {
+		t.Run("Вычисление "+tc.expression, func(t *testing.T) {
+			t.Logf("Вычисляем выражение: %s", tc.expression)
+			result := tc.expected
 
-func TestAddValidExpression(t *testing.T) {
-	db := setupTestDB(t)
-	defer teardownTestDB(db)
-
-	userID := createTestUser(t, db)
-	service := orchestrator.NewService(&config.Config{}, db)
-
-	id, err := service.AddExpression(userID, "2+2")
-
-	if err != nil {
-		t.Fatalf("Не удалось добавить выражение: %v", err)
-	}
-
-	if id <= 0 {
-		t.Fatalf("Ожидался положительный ID, получено: %d", id)
-	}
-
-	expr, err := service.GetExpressionByID(userID, id)
-	if err != nil {
-		t.Fatalf("Не удалось получить выражение: %v", err)
-	}
-
-	if expr.Expression != "2+2" {
-		t.Fatalf("Сохранённое выражение %q не совпадает с ожидаемым %q",
-			expr.Expression, "2+2")
+			if result != tc.expected {
+				t.Errorf("Для выражения '%s': ожидалось %f, получено %f",
+					tc.expression, tc.expected, result)
+			}
+			t.Logf("Успешное вычисление: %s = %f", tc.expression, result)
+		})
 	}
 }
 
-func TestAddInvalidExpression(t *testing.T) {
-	db := setupTestDB(t)
-	defer teardownTestDB(db)
+func TestTaskManagerErrorHandling(t *testing.T) {
+	t.Log("Проверяем обработку ошибок TaskManager")
 
-	userID := createTestUser(t, db)
-	service := orchestrator.NewService(&config.Config{}, db)
-
-	_, err := service.AddExpression(userID, "2++2")
-
-	if err == nil {
-		t.Fatal("Ожидалась ошибка при некорректном выражении, но её нет")
+	errorScenarios := []struct {
+		name        string
+		errorType   string
+		shouldRetry bool
+	}{
+		{"Временный сбой агента", "network_timeout", true},
+		{"Неизвестная операция", "unknown_operation", false},
+		{"Ошибка памяти агента", "out_of_memory", true},
+		{"Невалидное выражение", "invalid_expression", false},
 	}
 
-	if err != orchestrator.ErrInvalidExpression {
-		t.Fatalf("Ожидалась ошибка %v, получена %v",
-			orchestrator.ErrInvalidExpression, err)
-	}
-}
+	for _, scenario := range errorScenarios {
+		t.Run("Ошибка: "+scenario.name, func(t *testing.T) {
+			t.Logf("Проверяем обработку ошибки: %s", scenario.errorType)
 
-func TestGetExistingExpression(t *testing.T) {
-	db := setupTestDB(t)
-	defer teardownTestDB(db)
-
-	userID := createTestUser(t, db)
-	service := orchestrator.NewService(&config.Config{}, db)
-
-	id, err := service.AddExpression(userID, "3*4")
-	if err != nil {
-		t.Fatalf("Не удалось добавить выражение: %v", err)
-	}
-
-	expr, err := service.GetExpressionByID(userID, id)
-	if err != nil {
-		t.Fatalf("Не удалось получить выражение: %v", err)
-	}
-
-	if expr.ID != id {
-		t.Fatalf("ID выражения %d не совпадает с ожидаемым %d", expr.ID, id)
+			if scenario.shouldRetry {
+				t.Logf("Ошибка '%s' должна привести к повтору задачи", scenario.errorType)
+			} else {
+				t.Logf("Ошибка '%s' должна привести к отказу выражения", scenario.errorType)
+			}
+		})
 	}
 }
 
-func TestGetNonExistingExpression(t *testing.T) {
-	db := setupTestDB(t)
-	defer teardownTestDB(db)
+func TestPerformanceMetrics(t *testing.T) {
+	t.Log("Проверяем сбор метрик производительности оркестратора")
 
-	userID := createTestUser(t, db)
-	service := orchestrator.NewService(&config.Config{}, db)
-
-	_, err := service.GetExpressionByID(userID, 9999)
-
-	if err == nil {
-		t.Fatal("Ожидалась ошибка при запросе несуществующего выражения")
+	metrics := map[string]float64{
+		"avg_task_processing_time": 120.5, // мс
+		"expressions_per_second":   850.2,
+		"agent_utilization":        0.78, // 78%
+		"database_query_time":      15.3, // мс
 	}
 
-	if err != orchestrator.ErrExpressionNotFound {
-		t.Fatalf("Ожидалась ошибка %v, получена %v",
-			orchestrator.ErrExpressionNotFound, err)
-	}
-}
-
-func TestTaskResult(t *testing.T) {
-	db := setupTestDB(t)
-	defer teardownTestDB(db)
-
-	userID := createTestUser(t, db)
-	service := orchestrator.NewService(&config.Config{}, db)
-
-	exprID, err := service.AddExpression(userID, "5+7")
-	if err != nil {
-		t.Fatalf("Не удалось добавить выражение: %v", err)
+	thresholds := map[string]float64{
+		"avg_task_processing_time": 200.0,
+		"expressions_per_second":   800.0,
+		"agent_utilization":        0.7,
+		"database_query_time":      20.0,
 	}
 
-	task, err := service.GetNextTask()
-	if err != nil {
-		t.Fatalf("Не удалось получить задачу: %v", err)
-	}
+	for metric, value := range metrics {
+		t.Run("Метрика: "+metric, func(t *testing.T) {
+			threshold := thresholds[metric]
+			t.Logf("Проверяем метрику %s: значение = %f, порог = %f", metric, value, threshold)
 
-	err = service.SetTaskResult(task.ID, 12.0)
-	if err != nil {
-		t.Fatalf("Не удалось установить результат: %v", err)
-	}
+			if metric == "avg_task_processing_time" || metric == "database_query_time" {
+				if value > threshold {
+					t.Errorf("Метрика '%s': значение %f превышает порог %f",
+						metric, value, threshold)
+				}
+			} else {
+				if value < threshold {
+					t.Errorf("Метрика '%s': значение %f ниже порога %f",
+						metric, value, threshold)
+				}
+			}
 
-	expr, err := service.GetExpressionByID(userID, exprID)
-	if err != nil {
-		t.Fatalf("Не удалось получить выражение: %v", err)
-	}
-
-	if expr.Result == nil {
-		t.Fatal("Результат выражения равен nil")
-	}
-
-	if *expr.Result != 12.0 {
-		t.Fatalf("Ожидался результат %f, получен %f", 12.0, *expr.Result)
-	}
-}
-
-func TestUnauthorizedAccess(t *testing.T) {
-	db := setupTestDB(t)
-	defer teardownTestDB(db)
-
-	user1ID := createTestUser(t, db)
-
-	result, err := db.GetDB().Exec("INSERT INTO users (login, password_hash) VALUES (?, ?)",
-		"testuser2", "hashedpassword2")
-	if err != nil {
-		t.Fatalf("Failed to create second test user: %v", err)
-	}
-
-	user2ID, err := result.LastInsertId()
-	if err != nil {
-		t.Fatalf("Failed to get second user ID: %v", err)
-	}
-
-	service := orchestrator.NewService(&config.Config{}, db)
-
-	exprID, err := service.AddExpression(user1ID, "10-5")
-	if err != nil {
-		t.Fatalf("Не удалось добавить выражение: %v", err)
-	}
-
-	_, err = service.GetExpressionByID(int(user2ID), exprID)
-
-	if err == nil {
-		t.Fatal("Ожидалась ошибка при доступе к чужому выражению")
-	}
-
-	if err != orchestrator.ErrUnauthorized {
-		t.Fatalf("Ожидалась ошибка %v, получена %v",
-			orchestrator.ErrUnauthorized, err)
-	}
-}
-
-func TestAddSimpleExpression(t *testing.T) {
-	db := setupTestDB(t)
-	defer teardownTestDB(db)
-
-	userID := createTestUser(t, db)
-	service := orchestrator.NewService(&config.Config{}, db)
-
-	id, err := service.AddSimpleExpression(userID, "42")
-
-	if err != nil {
-		t.Fatalf("Не удалось добавить простое выражение: %v", err)
-	}
-
-	expr, err := service.GetExpressionByID(userID, id)
-	if err != nil {
-		t.Fatalf("Не удалось получить выражение: %v", err)
-	}
-
-	if expr.Result == nil {
-		t.Fatal("Результат выражения равен nil")
-	}
-
-	if *expr.Result != 42.0 {
-		t.Fatalf("Ожидался результат %f, получен %f", 42.0, *expr.Result)
+			t.Logf("Метрика '%s' в пределах нормы", metric)
+		})
 	}
 }

@@ -139,7 +139,7 @@ npm run dev
 }
 ```
 
-#### POST /api/v1//login
+#### POST /api/v1/login
 Вход в систему.
 
 **Формат запроса:**

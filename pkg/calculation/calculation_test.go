@@ -6,74 +6,37 @@ import (
 	"github.com/neptship/calc-yandex-go/pkg/calculation"
 )
 
-func TestCalc(t *testing.T) {
-	testCasesSuccess := []struct {
-		name           string
-		expression     string
-		expectedResult float64
+func TestCalculate(t *testing.T) {
+	testCases := []struct {
+		name     string
+		expr     string
+		expected float64
+		hasError bool
 	}{
-		{
-			name:           "simple",
-			expression:     "20+32",
-			expectedResult: 52,
-		},
-		{
-			name:           "priority",
-			expression:     "(2+2)*2",
-			expectedResult: 8,
-		},
-		{
-			name:           "priority",
-			expression:     "2+2*2",
-			expectedResult: 6,
-		},
-		{
-			name:           "/",
-			expression:     "1/2",
-			expectedResult: 0.5,
-		},
+		{"простое сложение", "2+3", 5, false},
+		{"сложение и умножение", "2+3*4", 14, false},
+		{"скобки", "(2+3)*4", 20, false},
+		{"деление", "10/2", 5, false},
+		{"деление на ноль", "1/0", 0, true},
+		{"некорректное выражение", "2++3", 0, true},
+		{"пустое выражение", "", 0, true},
 	}
 
-	for _, testCase := range testCasesSuccess {
-		t.Run(testCase.name, func(t *testing.T) {
-			value, err := calculation.Calc(testCase.expression)
-			if err != nil {
-				t.Fatalf("successful case %s returns error", testCase.expression)
-			}
-			if value != testCase.expectedResult {
-				t.Fatalf("%f should be equal %f", value, testCase.expectedResult)
-			}
-		})
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := calculation.Calc(tc.expr)
 
-	testCasesFail := []struct {
-		name        string
-		expression  string
-		expectedErr error
-	}{
-		{
-			name:       "simple",
-			expression: "1*1*",
-		},
-		{
-			name:       "priority",
-			expression: "2/0",
-		},
-		{
-			name:       "priority",
-			expression: "2*()8",
-		},
-		{
-			name:       "/",
-			expression: "",
-		},
-	}
-
-	for _, testCase := range testCasesFail {
-		t.Run(testCase.name, func(t *testing.T) {
-			value, err := calculation.Calc(testCase.expression)
-			if err == nil {
-				t.Fatalf("expression %s is invalid but result %f was obtained", testCase.expression, value)
+			if tc.hasError {
+				if err == nil {
+					t.Errorf("ожидалась ошибка для выражения '%s', но её нет", tc.expr)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("неожиданная ошибка для выражения '%s': %v", tc.expr, err)
+				}
+				if result != tc.expected {
+					t.Errorf("для выражения '%s': ожидалось %f, получено %f", tc.expr, tc.expected, result)
+				}
 			}
 		})
 	}

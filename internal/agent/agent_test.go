@@ -6,59 +6,12 @@ import (
 	"github.com/neptship/calc-yandex-go/internal/models"
 )
 
-func TestOperations(t *testing.T) {
-	testOperation := func(operation string, arg1, arg2, expected float64) {
-		task := &models.Task{
-			ID:            1,
-			Arg1:          arg1,
-			Arg2:          arg2,
-			Operation:     operation,
-			OperationTime: 10,
-		}
+func executeOperationLocal(task *models.Task) (float64, bool) {
+	arg1, ok1 := task.Arg1.(float64)
+	arg2, ok2 := task.Arg2.(float64)
 
-		result, hasError := executeOperationTest(task)
-
-		if operation == "/" && arg2 == 0 {
-			if !hasError {
-				t.Errorf("Ожидалась ошибка деления на ноль")
-			}
-			return
-		}
-
-		if hasError {
-			t.Errorf("Неожиданная ошибка при операции %s с аргументами %f и %f",
-				operation, arg1, arg2)
-			return
-		}
-
-		if result != expected {
-			t.Errorf("Для операции %s с аргументами %f и %f ожидалось %f, получено %f",
-				operation, arg1, arg2, expected, result)
-		}
-	}
-
-	testOperation("+", 5, 3, 8)
-	testOperation("-", 5, 3, 2)
-	testOperation("*", 5, 3, 15)
-	testOperation("/", 6, 3, 2)
-	testOperation("/", 5, 0, 0)
-}
-
-func executeOperationTest(task *models.Task) (float64, bool) {
-	var arg1, arg2 float64
-
-	switch v := task.Arg1.(type) {
-	case float64:
-		arg1 = v
-	case int:
-		arg1 = float64(v)
-	}
-
-	switch v := task.Arg2.(type) {
-	case float64:
-		arg2 = v
-	case int:
-		arg2 = float64(v)
+	if !ok1 || !ok2 {
+		return 0, true
 	}
 
 	switch task.Operation {
@@ -75,5 +28,40 @@ func executeOperationTest(task *models.Task) (float64, bool) {
 		return arg1 / arg2, false
 	default:
 		return 0, true
+	}
+}
+
+func TestExecuteOperation(t *testing.T) {
+	testCases := []struct {
+		name     string
+		task     models.Task
+		expected float64
+		hasError bool
+	}{
+		{"сложение", models.Task{Arg1: 5.0, Arg2: 3.0, Operation: "+"}, 8.0, false},
+		{"вычитание", models.Task{Arg1: 5.0, Arg2: 3.0, Operation: "-"}, 2.0, false},
+		{"умножение", models.Task{Arg1: 5.0, Arg2: 3.0, Operation: "*"}, 15.0, false},
+		{"деление", models.Task{Arg1: 6.0, Arg2: 3.0, Operation: "/"}, 2.0, false},
+		{"деление на ноль", models.Task{Arg1: 5.0, Arg2: 0.0, Operation: "/"}, 0.0, true},
+		{"неизвестная операция", models.Task{Arg1: 5.0, Arg2: 3.0, Operation: "%"}, 0.0, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, isError := executeOperationLocal(&tc.task)
+
+			if tc.hasError {
+				if !isError {
+					t.Errorf("ожидалась ошибка для операции '%s', но её нет", tc.task.Operation)
+				}
+			} else {
+				if isError {
+					t.Errorf("неожиданная ошибка для операции '%s'", tc.task.Operation)
+				}
+				if result != tc.expected {
+					t.Errorf("для операции '%s': ожидалось %f, получено %f", tc.task.Operation, tc.expected, result)
+				}
+			}
+		})
 	}
 }
