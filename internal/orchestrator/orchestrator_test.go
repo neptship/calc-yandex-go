@@ -81,10 +81,10 @@ func TestPerformanceMetrics(t *testing.T) {
 	t.Log("Проверяем сбор метрик производительности оркестратора")
 
 	metrics := map[string]float64{
-		"avg_task_processing_time": 120.5, // мс
+		"avg_task_processing_time": 120.5,
 		"expressions_per_second":   850.2,
-		"agent_utilization":        0.78, // 78%
-		"database_query_time":      15.3, // мс
+		"agent_utilization":        0.78,
+		"database_query_time":      15.3,
 	}
 
 	thresholds := map[string]float64{
